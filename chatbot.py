@@ -21,7 +21,7 @@ import difflib
 import re
 
 from data_loader import CROP_KEYWORDS, CROP_NAME_MAP, load_data
-from features import get_latest_price, get_trend
+from features import compare_mandis, get_latest_price, get_trend
 from model import get_advice
 
 # Crop na milne par yahi message jayega
@@ -82,8 +82,15 @@ def _find_crop(message: str):
 
     # 3. Lambe keyword (4+ letters) kahin bhi mile to chalega
     #    (jaise "tamatarprice" bhi pakad me aa jaye)
+    #    Dhyaan: match shabd ke shuru se hona chahiye, warna
+    #    "price" ke andar "rice" match ho jata hai.
     for key in sorted(CROP_NAME_MAP, key=len, reverse=True):
-        if len(key) >= 4 and key in text:
+        if len(key) < 4:
+            continue
+
+        pattern = r"(?<![a-z0-9\u0900-\u097F])" + re.escape(key)
+
+        if re.search(pattern, text):
             return CROP_NAME_MAP[key]
 
     # 4. Fuzzy match -- galat spelling wale shabd bhi pehchan lo
@@ -128,6 +135,126 @@ def _money(value: float) -> str:
     return f"₹{value:,.0f}"
 
 
+def _per_kg(value: float) -> str:
+    """Per quintal se per kg banao (1 quintal = 100 kg): 2025 -> ₹20.25"""
+    return f"₹{value / 100:,.2f}"
+
+
+def _advice_block(crop: str, df) -> str:
+    """
+    Bechne ki salah ki 2 lines banata hai:
+    - Salah kya hai
+    - Kab bechna chahiye
+    """
+    advice = get_advice(crop, 7, df)
+
+    if advice.get("error"):
+        return ""
+
+    expected = advice["expected_price"]
+    change = advice["change_percent"]
+
+    if advice["advice"] == "kuch din ruko":
+        kab = "5-7 din ruk kar becho, rate badhne ka anumaan hai."
+    else:
+        kab = "Abhi bech do, rate girne ka anumaan hai."
+
+    return (
+        f"\n\n**Salah: {advice['advice'].upper()}**\n"
+        f"- Agle 7 din ka anumaan: {_money(expected)}/quintal "
+        f"({_per_kg(expected)}/kg, {change:+.1f}%)\n"
+        f"- Kab beche: {kab}"
+    )
+
+
+def _mandi_wise_lines(crop: str, selected_mandi, df) -> str:
+    """
+    Har mandi ka modal bhav list karta hai (per quintal + per kg).
+    Sabse zyada bhav wali mandi sabse upar.
+    """
+    comparison = compare_mandis(crop, df)
+
+    if comparison.get("error"):
+        return ""
+
+    lines = ["", "**Mandi-wise modal bhav (per quintal / per kg):**"]
+
+    for _, row in comparison["table"].iterrows():
+        # Jo mandi user ne chuni hai use mark karo
+        mark = "  <- aapki mandi" if selected_mandi == row["mandi"] else ""
+
+        lines.append(
+            f"- {row['mandi']}: {_money(row['modal_price'])} "
+            f"({_per_kg(row['modal_price'])}/kg){mark}"
+        )
+
+    return "\n".join(lines)
+
+
+def _price_answer(crop: str, mandi, df, place=None) -> dict:
+    """
+    Crop (aur mandi) ka latest bhav ka jawab banata hai.
+
+    Jawab me aata hai:
+    - per quintal aur per kg bhav (date ke saath)
+    - saari mandiyon ka bhav
+    - bechne ki salah aur kab bechna hai
+    """
+    # 1. Latest price nikalo
+    result = get_latest_price(crop, mandi, df)
+
+    # 2. Mandi di gayi thi par mili nahi -> average dikhao
+    note = ""
+    if result.get("error") and mandi is not None:
+        result = get_latest_price(crop, None, df)
+        note = (
+            f"\n\nNote: '{mandi}' ka data is dataset me nahi hai, "
+            "isliye saari mandiyon ka average bata raha hoon."
+        )
+
+    # 3. Phir bhi error hai to wahi bhej do
+    if result.get("error"):
+        return {"answer": result["error"], "error": result["error"]}
+
+    # 4. Mandi ki line banao
+    if mandi is None:
+        mandi_line = (
+            f"Mandi: saari mandiyon ka average ({result['mandis_count']} mandiyan)"
+        )
+        if place:
+            note = (
+                f"\n\nNote: '{place.capitalize()}' ka data is dataset me nahi hai, "
+                "isliye saari mandiyon ka average bata raha hoon."
+            )
+    else:
+        mandi_line = f"Mandi: {result['mandi']}"
+
+    # 5. Price lines (quintal + kg, dono)
+    answer = (
+        f"{result['crop']} ka taaza bhav -- {result['date']}\n"
+        f"- Modal bhav: {_money(result['modal_price'])}/quintal "
+        f"({_per_kg(result['modal_price'])}/kg)\n"
+        f"- Kam se kam: {_money(result['min_price'])}/quintal "
+        f"({_per_kg(result['min_price'])}/kg)\n"
+        f"- Zyada se zyada: {_money(result['max_price'])}/quintal "
+        f"({_per_kg(result['max_price'])}/kg)\n"
+        f"- {mandi_line}"
+    )
+
+    # 6. Saari mandiyon ka rate
+    answer += _mandi_wise_lines(crop, mandi, df)
+
+    # 7. Bechne ki salah
+    answer += _advice_block(crop, df)
+
+    return {
+        "answer": answer + note,
+        "crop": result["crop"],
+        "mandi": result["mandi"],
+        "error": None,
+    }
+
+
 def _unknown_place(message: str, mandis):
     """
     Message me aisi jagah dhoondhta hai jo mandi list me nahi hai.
@@ -158,58 +285,6 @@ def _unknown_place(message: str, mandis):
     return None
 
 
-def _price_answer(crop: str, mandi, df, place=None) -> dict:
-    """
-    Crop (aur mandi) ka latest bhav ka jawab banata hai.
-    Agar mandi ka data na mile to average dikha deta hai.
-    """
-    # 1. Latest price nikalo
-    result = get_latest_price(crop, mandi, df)
-
-    # 2. Mandi di gayi thi par mili nahi -> average dikhao
-    note = ""
-    if result.get("error") and mandi is not None:
-        result = get_latest_price(crop, None, df)
-        note = (
-            f"\n\nNote: '{mandi}' ka data is dataset me nahi hai, "
-            "isliye saari mandiyon ka average bata raha hoon."
-        )
-
-    # 3. Phir bhi error hai to wahi bhej do
-    if result.get("error"):
-        return {"answer": result["error"], "error": result["error"]}
-
-    # 4. Mandi ki line banao
-    if mandi is None:
-        mandi_line = (
-            f"- Mandi: saari mandiyon ka average "
-            f"({result['mandis_count']} mandiyan)"
-        )
-        if place:
-            note = (
-                f"\n\nNote: '{place.capitalize()}' ka data is dataset me nahi hai, "
-                "isliye saari mandiyon ka average bata raha hoon."
-            )
-    else:
-        mandi_line = f"- Mandi: {result['mandi']}"
-
-    # 5. Jawab tayyar karo
-    answer = (
-        f"{result['crop']} ka taaza bhav ({result['date']}):\n"
-        f"- Kam se kam: {_money(result['min_price'])}\n"
-        f"- Zyada se zyada: {_money(result['max_price'])}\n"
-        f"- Modal (main) bhav: {_money(result['modal_price'])} per quintal\n"
-        f"{mandi_line}"
-    )
-
-    return {
-        "answer": answer + note,
-        "crop": result["crop"],
-        "mandi": result["mandi"],
-        "error": None,
-    }
-
-
 def _trend_answer(crop: str, df) -> dict:
     """Pichle 7 mahino ka trend aur % badlav batata hai."""
     # 1. Trend nikalo (default 7 points)
@@ -221,8 +296,14 @@ def _trend_answer(crop: str, df) -> dict:
     # 2. Rates ki chhoti list banao: 2764 -> 2736 -> ...
     prices = " -> ".join(_money(p) for p in result["prices"])
 
+    # 3. Sabse latest rate (per quintal + per kg, date ke saath)
+    last_price = result["prices"][-1]
+    last_date = result["dates"][-1]
+
     answer = (
         f"{result['summary']}\n"
+        f"Ab ka bhav ({last_date}): {_money(last_price)}/quintal "
+        f"({_per_kg(last_price)}/kg)\n"
         f"Pichle {len(result['prices'])} mahino ke rate: {prices}"
     )
 
@@ -243,10 +324,32 @@ def _advice_answer(crop: str, df) -> dict:
         return {"answer": result["error"], "error": result["error"]}
 
     # 2. Jawab
+    if result["advice"] == "kuch din ruko":
+        kab = "5-7 din ruk kar becho, rate badhne ka anumaan hai."
+    else:
+        kab = "Abhi bech do, rate girne ka anumaan hai."
+
     answer = (
-        f"Salah: {result['advice'].upper()}\n"
-        f"{result['reason']}"
+        f"**Salah: {result['advice'].upper()}**\n"
+        f"{result['reason']}\n"
+        f"- Aaj ka bhav: {_money(result['current_price'])}/quintal "
+        f"({_per_kg(result['current_price'])}/kg)\n"
+        f"- Agle 7 din ka anumaan: {_money(result['expected_price'])}/quintal "
+        f"({_per_kg(result['expected_price'])}/kg)\n"
+        f"- Kab beche: {kab}"
     )
+
+    # 3. Kis mandi me kitna -- sabse achhi aur sabse kam mandi
+    comparison = compare_mandis(crop, df)
+    if not comparison.get("error"):
+        answer += (
+            f"\n- Sabse zyada bhav: {comparison['best_mandi']} me "
+            f"{_money(comparison['best_price'])}/quintal "
+            f"({_per_kg(comparison['best_price'])}/kg)\n"
+            f"- Sabse kam bhav: {comparison['worst_mandi']} me "
+            f"{_money(comparison['worst_price'])}/quintal "
+            f"({_per_kg(comparison['worst_price'])}/kg)"
+        )
 
     return {
         "answer": answer,
