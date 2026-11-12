@@ -184,21 +184,21 @@ def get_advice(crop: str, days: int = 7, df: pd.DataFrame | None = None) -> dict
         advice = "kuch din ruko"
         reason = (
             f"Agle {FORECAST_STEPS} din me {result['crop']} ka bhav "
-            f"₹{current} se badhkar lagbhag ₹{expected} ({change}%) "
+            f"₹{current:,.0f} se badhkar lagbhag ₹{expected:,.0f} ({change}%) "
             "ho sakta hai. Thoda intezaar karo, behtar rate mil sakta hai."
         )
     elif change <= -1.0:
         advice = "abhi bechna theek hai"
         reason = (
             f"Agle {FORECAST_STEPS} din me {result['crop']} ka bhav "
-            f"₹{current} se girkar lagbhag ₹{expected} ({change}%) "
+            f"₹{current:,.0f} se girkar lagbhag ₹{expected:,.0f} ({change}%) "
             "ho sakta hai. Abhi bech do, warna nuksan ho sakta hai."
         )
     else:
         advice = "abhi bechna theek hai"
         reason = (
             f"{result['crop']} ka bhav lagbhag sthir hai "
-            f"(₹{current} se ₹{expected}, {change}%). "
+            f"(₹{current:,.0f} se ₹{expected:,.0f}, {change}%). "
             "Rate zyada nahi badlega, isliye abhi bech sakte ho."
         )
 

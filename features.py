@@ -280,7 +280,7 @@ def get_trend(crop: str, days: int = 7, df: pd.DataFrame | None = None) -> dict:
     summary = (
         f"{crop_name} ka bhav pichle {len(prices)} mahino me "
         f"{abs(change_percent)}% {direction} hai. "
-        f"₹{first_price} se ₹{last_price} ({arrow})"
+        f"₹{first_price:,.0f} se ₹{last_price:,.0f} ({arrow})"
     )
 
     # 11. Plotly line chart banao
