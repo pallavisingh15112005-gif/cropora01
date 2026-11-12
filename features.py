@@ -16,6 +16,7 @@ Target (jo predict karna hai) = modal_price
 """
 
 import pandas as pd
+import plotly.graph_objects as go
 
 from data_loader import KEEP_CROPS, load_data, standardize_crop_name
 
@@ -190,6 +191,131 @@ def get_latest_price(crop: str, mandi: str | None = None, df: pd.DataFrame | Non
         "max_price": round(float(latest_rows["max_price"].mean()), 2),
         "modal_price": round(float(latest_rows["modal_price"].mean()), 2),
         "mandis_count": int(latest_rows["mandi"].nunique()),
+        "error": None,
+    }
+
+
+def get_trend(crop: str, days: int = 7, df: pd.DataFrame | None = None) -> dict:
+    """
+    Pichle kuch rate points ka trend nikalta hai.
+
+    Dhyaan do: is dataset me har mahine ka ek rate hai (daily data nahi).
+    Isliye days ka matlab hai "kitne latest rate points" (matlab mahine).
+    days=7 -> pichle 7 mahine ka trend.
+
+    Parameters
+    ----------
+    crop : crop ka naam -- Hindi ya English dono chalega
+    days : kitne latest points chahiye (default 7)
+    df   : clean data (optional)
+
+    Return: dictionary jisme
+        dates           = list of dates (string)
+        prices          = list of modal price
+        change_percent  = pehle se aakhri rate me kitna % badla
+        direction       = "badha" / "gira" / "stable"
+        summary         = ek line ka Hindi message
+        fig             = plotly line chart
+        error           = None, ya error message
+    """
+    # 1. Data load karo
+    if df is None:
+        df = load_data()
+
+    # 2. Crop ka naam standard karo
+    crop_name = standardize_crop_name(crop)
+
+    if crop_name is None:
+        return {
+            "error": f"'{crop}' naam ka crop nahi mila. In 12 crops me se koi chuno: "
+            + ", ".join(KEEP_CROPS)
+        }
+
+    # 3. Kam se kam 2 points chahiye, warna trend ka matlab nahi
+    if days < 2:
+        return {"error": "Trend ke liye days kam se kam 2 hona chahiye."}
+
+    # 4. Sirf is crop ka data
+    crop_df = df[df["crop"] == crop_name]
+
+    if crop_df.empty:
+        return {"error": f"{crop_name} ka koi data nahi mila."}
+
+    # 5. Har date ka average modal price (saari mandiyon ka)
+    #    Isse ek hi line banti hai: date -> rate
+    prices_by_date = (
+        crop_df.groupby("date")["modal_price"].mean().sort_index()
+    )
+
+    # 6. Sirf aakhri `days` points rakho
+    trend = prices_by_date.tail(days)
+
+    if len(trend) < 2:
+        return {"error": f"{crop_name} ke liye itne rate points nahi hain."}
+
+    # 7. List banao (chart aur table ke liye)
+    dates = [d.strftime("%Y-%m-%d") for d in trend.index]
+    prices = [round(float(p), 2) for p in trend.values]
+
+    # 8. Change nikalo: (aakhri - pehla) / pehla * 100
+    first_price = prices[0]
+    last_price = prices[-1]
+    change_percent = round((last_price - first_price) / first_price * 100, 2)
+
+    # 9. Direction decide karo (0.5% se chhota badlav = stable)
+    if change_percent > 0.5:
+        direction = "badha"
+        color = "#2E7D32"   # hara
+        arrow = "▲"
+    elif change_percent < -0.5:
+        direction = "gira"
+        color = "#C62828"   # laal
+        arrow = "▼"
+    else:
+        direction = "stable"
+        color = "#1565C0"   # neela
+        arrow = "▬"
+
+    # 10. Ek line ka message
+    summary = (
+        f"{crop_name} ka bhav pichle {len(prices)} mahino me "
+        f"{abs(change_percent)}% {direction} hai. "
+        f"₹{first_price} se ₹{last_price} ({arrow})"
+    )
+
+    # 11. Plotly line chart banao
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=prices,
+            mode="lines+markers",
+            name=crop_name,
+            line=dict(color=color, width=3),
+            marker=dict(size=7),
+            hovertemplate="<b>%{x}</b><br>Rate: ₹%{y:,.0f}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        title=f"{crop_name} - pichle {len(prices)} mahino ka trend",
+        xaxis_title="Mahina",
+        yaxis_title="Modal price (₹/quintal)",
+        template="plotly_white",
+        height=380,
+        margin=dict(l=40, r=20, t=50, b=40),
+        hovermode="x unified",
+    )
+
+    return {
+        "crop": crop_name,
+        "dates": dates,
+        "prices": prices,
+        "change_percent": change_percent,
+        "direction": direction,
+        "summary": summary,
+        "fig": fig,
         "error": None,
     }
 
