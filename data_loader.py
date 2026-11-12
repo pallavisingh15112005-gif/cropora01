@@ -44,12 +44,17 @@ CROP_NAME_MAP = {
     "gehu": "Wheat",
     "gehun": "Wheat",
     "gehoon": "Wheat",
+    "gahu": "Wheat",
+    "gahoon": "Wheat",
     "गेहूं": "Wheat",
+    "गेहूँ": "Wheat",
     "गेहू": "Wheat",
     # Rice - चावल / धान
     "rice": "Rice",
     "chawal": "Rice",
     "chaawal": "Rice",
+    "chaval": "Rice",
+    "chawel": "Rice",
     "paddy": "Rice",
     "dhan": "Rice",
     "चावल": "Rice",
@@ -57,7 +62,9 @@ CROP_NAME_MAP = {
     # Maize - मक्का
     "maize": "Maize",
     "makka": "Maize",
+    "makkaa": "Maize",
     "makai": "Maize",
+    "makki": "Maize",
     "corn": "Maize",
     "मक्का": "Maize",
     "मकई": "Maize",
@@ -65,44 +72,67 @@ CROP_NAME_MAP = {
     "gram": "Gram",
     "chana": "Gram",
     "channa": "Gram",
+    "chane": "Gram",
     "चना": "Gram",
+    "चने": "Gram",
     # Potato - आलू
     "potato": "Potato",
     "aloo": "Potato",
+    "aalu": "Potato",
+    "aaloo": "Potato",
     "alu": "Potato",
+    "batata": "Potato",
     "आलू": "Potato",
+    "आलु": "Potato",
     # Onion - प्याज
     "onion": "Onion",
     "pyaz": "Onion",
+    "pyaaz": "Onion",
+    "pyaj": "Onion",
+    "pyaaj": "Onion",
     "piyaz": "Onion",
+    "piyaj": "Onion",
     "kanda": "Onion",
     "प्याज": "Onion",
+    "प्याज़": "Onion",
     # Tomato - टमाटर
     "tomato": "Tomato",
     "tamatar": "Tomato",
+    "tamater": "Tomato",
+    "tamaatar": "Tomato",
+    "tomatr": "Tomato",
     "टमाटर": "Tomato",
     # Mustard - सरसों
     "mustard": "Mustard",
     "sarson": "Mustard",
     "sarso": "Mustard",
+    "sarsu": "Mustard",
     "सरसों": "Mustard",
     # Banana - केला
     "banana": "Banana",
     "kela": "Banana",
+    "kella": "Banana",
     "केला": "Banana",
     # Apple - सेब
     "apple": "Apple",
     "seb": "Apple",
+    "saeb": "Apple",
     "सेब": "Apple",
     # Pomegranate - अनार
     "pomegranate": "Pomegranate",
     "anar": "Pomegranate",
+    "anaar": "Pomegranate",
     "अनार": "Pomegranate",
     # Papaya - पपीता
     "papaya": "Papaya",
+    "papita": "Papaya",
     "papeeta": "Papaya",
+    "papaiya": "Papaya",
     "पपीता": "Papaya",
 }
+
+# Fuzzy matching ke liye saare keywords ki list
+CROP_KEYWORDS = list(CROP_NAME_MAP.keys())
 
 # Ye columns number hone chahiye
 PRICE_COLUMNS = ["min_price", "max_price", "modal_price"]

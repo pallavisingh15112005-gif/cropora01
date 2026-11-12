@@ -17,16 +17,17 @@ Yahan koi AI/LLM nahi hai -- sirf keywords se samajhna, isliye ye
 college project ke liye halka aur bharosemand hai.
 """
 
+import difflib
 import re
 
-from data_loader import CROP_NAME_MAP, load_data, standardize_crop_name
+from data_loader import CROP_KEYWORDS, CROP_NAME_MAP, load_data
 from features import get_latest_price, get_trend
 from model import get_advice
 
 # Crop na milne par yahi message jayega
 NO_CROP_MSG = (
-    "Kripya crop ka naam batayein, jaise: gehu, chawal, aloo, tamatar, "
-    "pyaz, sarson, kela, seb."
+    "Kripya crop ka naam batayein. Ye 12 crops hain: gehu, chawal, makka, "
+    "chana, aloo, pyaz, tamatar, sarson, kela, seb, anar, papita."
 )
 
 # In shabdon ka matlab hai: user trend poochh raha hai
@@ -44,12 +45,27 @@ ADVICE_WORDS = [
 ]
 
 
+# Fuzzy matching se pehle in aam shabdon ko chhod dena hai
+# (warna "kya haal hai" jaisa sentence galti se crop ban jayega)
+STOPWORDS = {
+    "kya", "kyu", "kyun", "ka", "ki", "ke", "me", "hai", "hain", "ho",
+    "kaise", "kaisa", "kitna", "kitne", "kitni", "bhav", "bhaav", "rate",
+    "price", "mandi", "aaj", "kal", "abhi", "karo", "karu", "batao", "bata",
+    "dikhao", "chahiye", "bechna", "bech", "ruko", "salah", "trend", "haal",
+    "hal", "hello", "help", "thanks", "dhanyavad", "namaste", "sabse",
+    "sasta", "mehnga", "mujhe", "mera", "meri", "kisan", "crop", "fasal",
+    "mausam", "kaam", "baat", "acha", "achha", "theek", "nahi", "haan",
+}
+
+
 def _find_crop(message: str):
     """
     Message me se crop ka naam dhoondhta hai.
 
-    Pehle poore shabd (exact) match karta hai, phir lamba keyword
-    (4+ letters) message ke andar kahin bhi ho to match kar leta hai.
+    Teen tarike se dhoondhta hai:
+    1. Exact shabd       -> "aloo"
+    2. Lamba keyword      -> "aloo_ka_bhav" ke andar bhi mil jaye
+    3. Fuzzy (galat spelling) -> "aalu", "tamater", "gahu" bhi pakad le
 
     Return: standard crop naam ya None
     """
@@ -69,6 +85,19 @@ def _find_crop(message: str):
     for key in sorted(CROP_NAME_MAP, key=len, reverse=True):
         if len(key) >= 4 and key in text:
             return CROP_NAME_MAP[key]
+
+    # 4. Fuzzy match -- galat spelling wale shabd bhi pehchan lo
+    #    difflib "aalu" ko "aloo" se mila deta hai
+    for word in words:
+        # Bahut chhote shabd (jaise "ka", "me") aur aam shabd skip karo
+        if len(word) < 4 or word in STOPWORDS:
+            continue
+
+        # Sabse milta-julta keyword dhoondo (0.8 = kam se kam 80% match)
+        close = difflib.get_close_matches(word, CROP_KEYWORDS, n=1, cutoff=0.8)
+
+        if close:
+            return CROP_NAME_MAP[close[0]]
 
     return None
 
