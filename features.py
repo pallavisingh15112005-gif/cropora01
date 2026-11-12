@@ -17,7 +17,7 @@ Target (jo predict karna hai) = modal_price
 
 import pandas as pd
 
-from data_loader import KEEP_CROPS, load_data
+from data_loader import KEEP_CROPS, load_data, standardize_crop_name
 
 # Crop ka naam -> number (0 se 11 tak)
 # Ye fixed hai, isliye app me bhi same number milega
@@ -104,6 +104,94 @@ def add_encode_features(df: pd.DataFrame) -> pd.DataFrame:
     df["mandi_code"] = df["mandi"].map(mandi_codes)
 
     return df
+
+
+def get_latest_price(crop: str, mandi: str | None = None, df: pd.DataFrame | None = None) -> dict:
+    """
+    Kisi crop ka sabse latest (aaj tak ka last) rate deta hai.
+
+    Parameters
+    ----------
+    crop  : crop ka naam -- Hindi ya English dono chalega
+            (jaise "gehu", "गेहूं", "Wheat")
+    mandi : mandi ka naam (optional). Agar nahi diya to saari mandiyon
+            ka average nikalta hai.
+    df    : clean data (optional). Agar nahi diya to load_data() khud
+            data load kar lega.
+
+    Return: ek dictionary, jaise
+        {
+            "crop": "Wheat",
+            "mandi": "Karnal Mandi",
+            "date": "2025-12-01",
+            "min_price": 2100.0,
+            "max_price": 2300.0,
+            "modal_price": 2200.0,
+            "mandis_count": 1,
+            "error": None,
+        }
+
+    Agar data na mile to "error" me saaf message aata hai.
+    """
+    # 1. Data load karo (agar bahar se diya hai to wahi use karo)
+    if df is None:
+        df = load_data()
+
+    # 2. Crop ka naam standard karo -- "gehu" ho ya "Wheat", dono kaam karenge
+    crop_name = standardize_crop_name(crop)
+
+    # Naam list me nahi mila -> saaf message bhejo
+    if crop_name is None:
+        return {
+            "error": f"'{crop}' naam ka crop nahi mila. In 12 crops me se koi chuno: "
+            + ", ".join(KEEP_CROPS)
+        }
+
+    # 3. Sirf is crop ka data rakho
+    crop_df = df[df["crop"] == crop_name]
+
+    if crop_df.empty:
+        return {"error": f"{crop_name} ka koi data nahi mila."}
+
+    # 4. Agar mandi di gayi hai to data ko us mandi tak seemit karo
+    if mandi is None:
+        # Mandi nahi di -> saari mandiyan
+        selected_df = crop_df
+        mandi_label = "saari mandiyan (average)"
+    else:
+        # Mandi ka naam compare karne ke liye chhote letters me karo
+        wanted = str(mandi).strip().lower()
+        selected_df = crop_df[crop_df["mandi"].str.lower() == wanted]
+
+        # Mandi nahi mili -> available mandiyan bata do
+        if selected_df.empty:
+            return {
+                "error": f"'{mandi}' mandi {crop_name} ke liye nahi mili. "
+                "Ye mandiyan available hain: "
+                + ", ".join(sorted(crop_df["mandi"].unique()))
+            }
+
+        mandi_label = selected_df["mandi"].iloc[0]
+
+    # 5. Sabse latest date dhoondo
+    latest_date = selected_df["date"].max()
+
+    # 6. Sirf usi date ki rows rakho
+    latest_rows = selected_df[selected_df["date"] == latest_date]
+
+    # 7. Average nikaalo
+    #    (ek mandi ho to average = wahi value,
+    #     saari mandiyan hon to sabka average)
+    return {
+        "crop": crop_name,
+        "mandi": mandi_label,
+        "date": latest_date.strftime("%Y-%m-%d"),
+        "min_price": round(float(latest_rows["min_price"].mean()), 2),
+        "max_price": round(float(latest_rows["max_price"].mean()), 2),
+        "modal_price": round(float(latest_rows["modal_price"].mean()), 2),
+        "mandis_count": int(latest_rows["mandi"].nunique()),
+        "error": None,
+    }
 
 
 # Ye columns model ko input ke roop me jayenge
