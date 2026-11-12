@@ -320,6 +320,209 @@ def get_trend(crop: str, days: int = 7, df: pd.DataFrame | None = None) -> dict:
     }
 
 
+def compare_mandis(crop: str, df: pd.DataFrame | None = None) -> dict:
+    """
+    Ek crop ko saari mandiyon me compare karta hai.
+
+    Har mandi ka sabse latest rate nikaalta hai aur sabse zyada
+    rate wali mandi sabse upar rakhta hai.
+
+    Return: dictionary
+        table       = DataFrame (rank, mandi, date, min, max, modal)
+        best_mandi  = sabse zyada rate wali mandi
+        worst_mandi = sabse kam rate wali mandi
+        spread      = sabse zyada aur sabse kam rate ka farak (₹)
+        spread_pct  = wahi farak percent me
+        error       = None ya message
+    """
+    # 1. Data load karo
+    if df is None:
+        df = load_data()
+
+    # 2. Crop ka naam standard karo
+    crop_name = standardize_crop_name(crop)
+
+    if crop_name is None:
+        return {
+            "error": f"'{crop}' naam ka crop nahi mila. In 12 crops me se koi chuno: "
+            + ", ".join(KEEP_CROPS)
+        }
+
+    # 3. Sirf is crop ka data
+    part = df[df["crop"] == crop_name]
+
+    if part.empty:
+        return {"error": f"{crop_name} ka koi data nahi mila."}
+
+    # 4. Har mandi ki sabse latest row nikalo
+    #    (mandi + date se sort karke, har group ki last row)
+    latest = (
+        part.sort_values(["mandi", "date"])
+        .groupby("mandi")
+        .tail(1)[["mandi", "date", "min_price", "max_price", "modal_price"]]
+        .copy()
+    )
+
+    # 5. Sabse zyada rate wali mandi upar
+    table = latest.sort_values("modal_price", ascending=False).reset_index(drop=True)
+
+    # 6. Rank column add karo (1 = sabse mehnga)
+    table.insert(0, "rank", range(1, len(table) + 1))
+
+    # 7. Date ko simple text banao
+    table["date"] = table["date"].dt.strftime("%Y-%m-%d")
+
+    # 8. Sabse zyada aur sabse kam rate
+    best = table.iloc[0]
+    worst = table.iloc[-1]
+    spread = round(float(best["modal_price"] - worst["modal_price"]), 2)
+    spread_pct = round(spread / float(worst["modal_price"]) * 100, 2)
+
+    return {
+        "crop": crop_name,
+        "table": table,
+        "best_mandi": best["mandi"],
+        "best_price": round(float(best["modal_price"]), 2),
+        "worst_mandi": worst["mandi"],
+        "worst_price": round(float(worst["modal_price"]), 2),
+        "spread": spread,
+        "spread_pct": spread_pct,
+        "error": None,
+    }
+
+
+def best_crop_of_week(days: int = 7, df: pd.DataFrame | None = None) -> dict:
+    """
+    Pichle `days` points me sabse zyada % badhne wale top 3 crops.
+
+    Dhyaan do: dataset monthly hai, isliye days=7 ka matlab
+    "pichle 7 rate points" (7 mahine).
+
+    Return: dictionary
+        table = saare crops ka change % (upar se neeche)
+        top   = top 3 crops ki list (dict ki list)
+        error = None
+    """
+    # 1. Data load karo
+    if df is None:
+        df = load_data()
+
+    rows = []
+
+    # 2. Har crop ka change % nikalo
+    for crop_name in KEEP_CROPS:
+        part = df[df["crop"] == crop_name]
+
+        if part.empty:
+            continue
+
+        # Har date ka average rate, phir aakhri `days` points
+        series = part.groupby("date")["modal_price"].mean().sort_index().tail(days)
+
+        # Kam se kam 2 points chahiye
+        if len(series) < 2:
+            continue
+
+        first_price = float(series.iloc[0])
+        last_price = float(series.iloc[-1])
+
+        if first_price <= 0:
+            continue
+
+        # Percent change
+        change = round((last_price - first_price) / first_price * 100, 2)
+
+        rows.append(
+            {
+                "crop": crop_name,
+                "first_price": round(first_price, 2),
+                "last_price": round(last_price, 2),
+                "change_percent": change,
+                "points": len(series),
+            }
+        )
+
+    # 3. Koi data hi nahi mila
+    if not rows:
+        return {"error": "Compare karne ke liye kaafi data nahi hai."}
+
+    # 4. Sabse zyada badhne wale upar
+    table = (
+        pd.DataFrame(rows)
+        .sort_values("change_percent", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    # 5. Top 3
+    top = table.head(3).to_dict("records")
+
+    return {"table": table, "top": top, "days": days, "error": None}
+
+
+def check_alert(crop: str, limit: float, df: pd.DataFrame | None = None) -> dict:
+    """
+    Price alert check karta hai.
+
+    Agar crop ka latest (average) modal price aapki limit se ZYADA hai
+    to alert message deta hai. Warna batata hai ki bhav limit ke andar hai.
+
+    Example: check_alert("gehu", 2200)
+             -> "gehu ka bhav ₹2,278 hai, jo aapki limit ₹2,200 se zyada hai."
+
+    Return: dictionary
+        triggered = True/False (alert laga ya nahi)
+        message   = Hindi message
+        price     = latest modal price
+        limit     = aapki di hui limit
+        error     = None ya message
+    """
+    # 1. Limit sahi hai ya nahi
+    try:
+        limit = float(limit)
+    except (TypeError, ValueError):
+        return {"error": "Limit ek number honi chahiye, jaise 2200."}
+
+    if limit <= 0:
+        return {"error": "Limit 0 se badi honi chahiye."}
+
+    # 2. Latest price nikalo (saari mandiyon ka average)
+    result = get_latest_price(crop, None, df)
+
+    if result.get("error"):
+        return {"error": result["error"]}
+
+    price = result["modal_price"]
+    crop_name = result["crop"]
+
+    # 3. Limit se compare karo
+    if price > limit:
+        triggered = True
+        difference = round(price - limit, 2)
+        message = (
+            f"ALERT: {crop_name} ka bhav ₹{price:,.0f} hai, jo aapki "
+            f"limit ₹{limit:,.0f} se ₹{difference:,.0f} zyada hai. "
+            "Bechna faydemand ho sakta hai."
+        )
+    else:
+        triggered = False
+        difference = round(limit - price, 2)
+        message = (
+            f"Theek hai: {crop_name} ka bhav ₹{price:,.0f} hai, jo aapki "
+            f"limit ₹{limit:,.0f} se ₹{difference:,.0f} kam hai. "
+            "Abhi alert ki zaroorat nahi."
+        )
+
+    return {
+        "crop": crop_name,
+        "triggered": triggered,
+        "message": message,
+        "price": price,
+        "limit": limit,
+        "date": result["date"],
+        "error": None,
+    }
+
+
 # Ye columns model ko input ke roop me jayenge
 FEATURE_COLUMNS = [
     "month",
