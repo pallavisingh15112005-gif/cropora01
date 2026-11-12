@@ -132,10 +132,15 @@ with tab_price:
             pd.DataFrame(
                 {
                     "Date": [d.strftime("%Y-%m-%d") for d in recent.index],
-                    "Modal bhav (₹/quintal)": recent.values.round(0),
+                    "Modal bhav": recent.values.round(0),
                 }
             ),
             hide_index=True,
+            column_config={
+                "Modal bhav": st.column_config.NumberColumn(
+                    "Modal bhav (₹)", format="localized"
+                )
+            },
         )
 
 
@@ -176,10 +181,15 @@ with tab_trend:
             pd.DataFrame(
                 {
                     "Date": trend["dates"],
-                    "Modal bhav (₹/quintal)": trend["prices"],
+                    "Modal bhav": trend["prices"],
                 }
             ),
             hide_index=True,
+            column_config={
+                "Modal bhav": st.column_config.NumberColumn(
+                    "Modal bhav (₹)", format="localized"
+                )
+            },
         )
 
 
@@ -261,10 +271,15 @@ with tab_predict:
             pd.DataFrame(
                 {
                     "Date": pred["forecast_dates"],
-                    "Anumaan (₹/quintal)": [round(p) for p in pred["forecast_prices"]],
+                    "Anumaan": [round(p) for p in pred["forecast_prices"]],
                 }
             ),
             hide_index=True,
+            column_config={
+                "Anumaan": st.column_config.NumberColumn(
+                    "Anumaan (₹/quintal)", format="localized"
+                )
+            },
         )
 
         # Model accuracy (MAE)
@@ -331,9 +346,9 @@ with tab_compare:
                 "rank": st.column_config.NumberColumn("Rank", width="small"),
                 "mandi": "Mandi",
                 "date": "Date",
-                "min_price": st.column_config.NumberColumn("Kam", format="₹%.0f"),
-                "max_price": st.column_config.NumberColumn("Zyada", format="₹%.0f"),
-                "modal_price": st.column_config.NumberColumn("Modal", format="₹%.0f"),
+                "min_price": st.column_config.NumberColumn("Kam (₹)", format="localized"),
+                "max_price": st.column_config.NumberColumn("Zyada (₹)", format="localized"),
+                "modal_price": st.column_config.NumberColumn("Modal (₹)", format="localized"),
             },
         )
 
@@ -369,8 +384,12 @@ with tab_compare:
                 best["table"],
                 hide_index=True,
                 column_config={
-                    "first_price": st.column_config.NumberColumn("Pehle", format="₹%.0f"),
-                    "last_price": st.column_config.NumberColumn("Ab", format="₹%.0f"),
+                    "first_price": st.column_config.NumberColumn(
+                        "Pehle (₹)", format="localized"
+                    ),
+                    "last_price": st.column_config.NumberColumn(
+                        "Ab (₹)", format="localized"
+                    ),
                     "change_percent": st.column_config.NumberColumn(
                         "Change %", format="%.2f%%"
                     ),
