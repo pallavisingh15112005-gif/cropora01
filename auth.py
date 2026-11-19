@@ -125,7 +125,7 @@ def login(username: str, password: str):
     users = _ensure_demo_user()
 
     if username not in users:
-        return False, "Is username ka koi account nahi hai. Naya account banayein."
+        return False, "Is username ka koi account nahi hai. New account banayein."
 
     if not _check_password(password, users[username]["password"]):
         return False, "Password galat hai. Dobara koshish karein."
@@ -210,7 +210,7 @@ def _login_form():
     with st.form("login_form"):
         username = st.text_input("Username", placeholder="jaise: kisan")
         password = st.text_input("Password", type="password", placeholder="******")
-        submitted = st.form_submit_button("Login karo", type="primary")
+        submitted = st.form_submit_button("Login", type="primary")
 
     if not submitted:
         return
@@ -232,7 +232,7 @@ def _signup_form():
         username = st.text_input("Username", placeholder="kam se kam 3 akshar")
         password = st.text_input("Password", type="password", placeholder="kam se kam 6 akshar")
         confirm = st.text_input("Password dobara", type="password")
-        submitted = st.form_submit_button("Account banao", type="primary")
+        submitted = st.form_submit_button("Create account", type="primary")
 
     if not submitted:
         return
@@ -268,13 +268,13 @@ def require_login() -> None:
             textwrap.dedent(
                 f"""
                 <div style="font-size: 22px; font-weight: 800; color: {INK}; margin-bottom: 2px;">Welcome back</div>
-                <div style="font-size: 14px; color: {MUTED}; margin-bottom: 14px;">Login karein ya naya account banayein.</div>
+                <div style="font-size: 14px; color: {MUTED}; margin-bottom: 14px;">Login karein ya new account banayein.</div>
                 """
             ).strip(),
             unsafe_allow_html=True,
         )
 
-        tab_login, tab_signup = st.tabs(["Login", "Naya account"])
+        tab_login, tab_signup = st.tabs(["Login", "New account"])
 
         with tab_login:
             _login_form()
