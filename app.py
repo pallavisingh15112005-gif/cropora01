@@ -15,6 +15,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from auth import current_user, logout, require_login
 from chatbot import reply
 from data_loader import load_data
 from features import (
@@ -25,13 +26,27 @@ from features import (
     get_trend,
 )
 from model import get_accuracy, get_advice, predict_price
+from style import advice_box, apply_theme, footer, hero, style_fig
 
 # Page ki basic setting
 st.set_page_config(
-    page_title="Mandi Bhav Bot",
-    page_icon=":material/agriculture:",
+    page_title="Cropora AI",
+    page_icon="🌾",
     layout="wide",
 )
+
+# Theme (CSS) aur upar ka hero card
+apply_theme()
+
+# Login check -- login nahi hai to yahin login page dikha kar ruk jayega
+require_login()
+
+hero()
+
+# Login ke baad ek baar "swagat" message
+flash = st.session_state.pop("flash", None)
+if flash:
+    st.success(flash)
 
 # Crop ke Hindi naam (sirf dikhane ke liye)
 CROP_HINDI = {
@@ -67,6 +82,12 @@ df = get_data()
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
+    # Login wale user ka naam + logout
+    st.caption(f"Logged in: {current_user()}")
+    if st.button("Logout"):
+        logout()
+        st.rerun()
+
     st.header("Chunav")
 
     # Crop dropdown (Hindi naam ke saath)
@@ -85,10 +106,6 @@ with st.sidebar:
 
     st.caption("Data: mandi_prices.csv (Jan 2024 - Dec 2025)")
     st.caption("Note: Bhav sample data se hain, asli mandi rate se verify karein.")
-
-# ---------------- Title ----------------
-st.title("Mandi Bhav Bot")
-st.caption("Kisano ke liye crop price advisor -- bhav dekho, trend samjho, bechne ki salah lo.")
 
 # ---------------- 5 Tabs ----------------
 tab_price, tab_trend, tab_predict, tab_compare, tab_chat = st.tabs(
@@ -174,7 +191,9 @@ with tab_trend:
             st.info(trend["summary"])
 
         # Plotly line chart
-        st.plotly_chart(trend["fig"])
+        st.plotly_chart(
+            style_fig(trend["fig"], title=f"{crop} ka trend ({len(trend['dates'])} mahine)")
+        )
 
         # Table
         st.dataframe(
@@ -204,13 +223,15 @@ with tab_predict:
     if pred.get("error"):
         st.error(pred["error"])
     else:
-        # Salah ka card
+        # Salah ka card (green = abhi becho, amber = thoda ruko)
         if advice.get("error"):
             st.warning(advice["error"])
-        elif advice["advice"] == "abhi bechna theek hai":
-            st.success(f"**Salah: {advice['advice'].upper()}**\n\n{advice['reason']}")
         else:
-            st.warning(f"**Salah: {advice['advice'].upper()}**\n\n{advice['reason']}")
+            salah_text = advice["reason"]
+            if advice["advice"] == "abhi bechna theek hai":
+                advice_box("sell", salah_text)
+            else:
+                advice_box("wait", salah_text)
 
         # Numbers
         with st.container(horizontal=True):
@@ -263,7 +284,9 @@ with tab_predict:
             margin=dict(l=40, r=20, t=50, b=40),
         )
 
-        st.plotly_chart(fig)
+        st.plotly_chart(
+            style_fig(fig, title=f"{crop} -- asli rate aur agle 7 din ka anumaan")
+        )
 
         # Agle 7 din ka table
         st.markdown("**Agle 7 din ka anumaan**")
@@ -437,7 +460,8 @@ with tab_chat:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
             if msg.get("fig") is not None:
-                st.plotly_chart(msg["fig"])
+                # Purana chart: uska apna title hi rehne do
+                st.plotly_chart(style_fig(msg["fig"]))
 
     # Shuru me kuch example sawaal (pills)
     SUGGESTIONS = {
@@ -483,7 +507,12 @@ with tab_chat:
 
             # Trend wale sawaal me chart bhi dikhao
             if result.get("fig") is not None:
-                st.plotly_chart(result["fig"])
+                st.plotly_chart(
+                    style_fig(
+                        result["fig"],
+                        title=f"{result.get('crop', crop)} ka trend",
+                    )
+                )
 
         # 3. Jawab history me save karo
         st.session_state.messages.append(
@@ -493,3 +522,7 @@ with tab_chat:
                 "fig": result.get("fig"),
             }
         )
+
+
+# ============ Footer ============
+footer()
