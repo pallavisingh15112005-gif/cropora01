@@ -20,16 +20,24 @@ Pehla demo account (jab tak koi naya account na bane):
 
 import hashlib
 import json
-import os
 import secrets
 import textwrap
+from pathlib import Path
 
 import streamlit as st
 
 from style import GREEN, INK, MUTED
 
-# Users kahan save honge (ye file git me nahi jati)
-USERS_FILE = os.path.join(".streamlit", "users.json")
+# Users kahan save honge.
+# Dhyaan do: ye file project folder ke BAAHAR hai, kyunki project folder ke
+# andar file likhne par Streamlit ka file-watcher app ko rerun kar deta hai
+# (jisse login ke turant baad page reset ho jata tha).
+USERS_DIR = Path.home() / ".cropora_ai"
+USERS_FILE = USERS_DIR / "users.json"
+
+# Agar file likhne me dikkat aaye (jaise cloud par read-only folder),
+# to users memory me hi rahenge -- app phir bhi chalega.
+_MEM_USERS: dict = {}
 
 # Demo account -- pehli baar app kholne par yahi chalega
 DEMO_USERNAME = "kisan"
@@ -72,38 +80,58 @@ def _check_password(password: str, stored: str) -> bool:
 
 # ---------------- Users file helpers ----------------
 def _load_users() -> dict:
-    """users.json padhta hai. File na mile to khali dict."""
-    if not os.path.exists(USERS_FILE):
-        return {}
+    """
+    users.json padhta hai. File na mile to khali dict.
+
+    Memory wali copy pehle dekhte hain, taaki file likhne me dikkat
+    aane par bhi account kaam kare.
+    """
+    if _MEM_USERS:
+        return _MEM_USERS
 
     try:
-        with open(USERS_FILE, encoding="utf-8") as file:
-            return json.load(file)
-    except (json.JSONDecodeError, OSError):
-        return {}
+        if USERS_FILE.exists():
+            data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
+
+            if isinstance(data, dict):
+                _MEM_USERS.update(data)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        pass
+
+    return _MEM_USERS
 
 
-def _save_users(users: dict) -> None:
-    """users.json me users likhta hai."""
-    os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
+def _save_users(users: dict) -> bool:
+    """
+    users.json me users likhta hai.
 
-    with open(USERS_FILE, "w", encoding="utf-8") as file:
-        json.dump(users, file, indent=2, ensure_ascii=False)
+    Return: True agar file save ho gayi, False agar nahi
+    (False par bhi users memory me rehte hain, app chalta rehta hai).
+    """
+    _MEM_USERS.update(users)
+
+    try:
+        USERS_DIR.mkdir(parents=True, exist_ok=True)
+        USERS_FILE.write_text(
+            json.dumps(users, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return True
+    except OSError:
+        return False
 
 
 def _ensure_demo_user() -> dict:
     """
-    Pehli baar chalne par demo account bana deta hai,
+    Demo account hamesha available rakhta hai,
     taaki app bina setup ke turant chale.
     """
     users = _load_users()
 
-    if not users:
-        users = {
-            DEMO_USERNAME: {
-                "password": _hash_password(DEMO_PASSWORD),
-                "name": "Demo Kisan",
-            }
+    if DEMO_USERNAME not in users:
+        users[DEMO_USERNAME] = {
+            "password": _hash_password(DEMO_PASSWORD),
+            "name": "Demo Kisan",
         }
         _save_users(users)
 
@@ -124,13 +152,21 @@ def login(username: str, password: str):
 
     users = _ensure_demo_user()
 
-    if username not in users:
+    # Demo login hamesha chalega -- chahe users file kharab ho jaye
+    is_demo = username == DEMO_USERNAME and password == DEMO_PASSWORD
+
+    if username not in users and not is_demo:
         return False, "Is username ka koi account nahi hai. New account banayein."
 
-    if not _check_password(password, users[username]["password"]):
-        return False, "Password galat hai. Dobara koshish karein."
+    if not is_demo:
+        stored = users.get(username, {}).get("password", "")
 
-    return True, f"Swagat hai, {users[username].get('name') or username}!"
+        if not _check_password(password, stored):
+            return False, "Password galat hai. Dobara koshish karein."
+
+    display_name = users.get(username, {}).get("name") or username.title()
+
+    return True, f"Swagat hai, {display_name}!"
 
 
 def signup(username: str, password: str, confirm: str, name: str = ""):
@@ -226,7 +262,7 @@ def _login_form():
 
 
 def _signup_form():
-    """Naya account tab ka form."""
+    """New account tab ka form."""
     with st.form("signup_form"):
         name = st.text_input("Aapka naam", placeholder="jaise: Ramesh Kumar")
         username = st.text_input("Username", placeholder="kam se kam 3 akshar")
@@ -239,10 +275,14 @@ def _signup_form():
 
     ok, message = signup(username, password, confirm, name)
 
-    if ok:
-        st.success(message)
-    else:
+    if not ok:
         st.error(message)
+        return
+
+    # Account bante hi seedha login kar do
+    st.session_state.user = username.strip().lower()
+    st.session_state.flash = "Account ban gaya. Swagat hai!"
+    st.rerun()
 
 
 def require_login() -> None:
