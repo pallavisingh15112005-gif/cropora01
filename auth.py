@@ -241,8 +241,22 @@ def _brand_panel():
     st.markdown(textwrap.dedent(html).strip(), unsafe_allow_html=True)
 
 
+def _start_session(username: str, message: str) -> None:
+    """Login hone par session me user daal kar app khol deta hai."""
+    st.session_state.user = username.strip().lower()
+    st.session_state.flash = message
+    st.rerun()
+
+
 def _login_form():
     """Login tab ka form."""
+    # Ek click wala demo login -- presentation/demo ke time sabse aasan
+    if st.button("Demo login", type="secondary"):
+        _start_session(DEMO_USERNAME, f"Swagat hai, Demo Kisan!")
+        return
+
+    st.caption("Ya apna username aur password daalein:")
+
     with st.form("login_form"):
         username = st.text_input("Username", placeholder="jaise: kisan")
         password = st.text_input("Password", type="password", placeholder="******")
@@ -254,9 +268,8 @@ def _login_form():
     ok, message = login(username, password)
 
     if ok:
-        st.session_state.user = username.strip().lower()
-        st.session_state.flash = message
-        st.rerun()
+        _start_session(username, message)
+        return
 
     st.error(message)
 
